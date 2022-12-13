@@ -1,245 +1,231 @@
-import http from "http";
-import url from "url";
-import fs from "fs";
+"use strict"
+
+import http from 'http'
+import url from 'url'
+import fs from 'fs'
+import { MongoClient, ObjectId } from "mongodb"
+import express from "express"
 import dotenv from "dotenv";
-import { MongoClient, ObjectId } from "mongodb";
-import express from "express";
 import cors from "cors";
 
-// config
-const PORT = process.env.port || 1337;
-dotenv.config({ path: ".env" });
+
+/* ********************** */
+//config
+dotenv.config({ "path": ".env" })
+const PORT = process.env.PORT || 1337;
 const app = express();
+const DB_NAME: string = "5b";
 const connectionString: any = process.env.connectionString;
-const DBNAME = "5B";
-
-const corsOptions = {
-  origin: function (origin: any, callback: any) {
-    return callback(null, true);
-  },
-  credentials: true,
-};
-
-//CREAZIONE E AVVIO DEL SERVER HTTP
-let server = http.createServer(app);
-let paginaErrore: string = "";
-
-server.listen(PORT, () => {
-  init();
-  console.log("Server in ascolto sulla porta " + PORT);
-});
-
-function init() {
-  fs.readFile("./static/error.html", (err: any, data: any) => {
-    if (err) {
-      paginaErrore = "<h2>Risorsa non trovata</h2>";
-    } else {
-      paginaErrore = data.toString();
-    }
-  });
+const corsOption = {
+    "origin" : function(origin : any, callback:any){
+        return callback(null, true);
+    },
+    credentials : true
 }
 
-/***********MIDDLEWARE****************/
-// 1 request log
-app.use("/", (req: any, res: any, next: any) => {
-  console.log(req.method + ": " + req.originalUrl);
-  next();
-});
+let paginaErrore: string;//strinag che contiene la pagina di errore
+//avvio del server
 
-// 2 gestione delle risorse statiche
-//cerca le risorse nella cartella segnata nel path e li restituisce
-app.use("/", express.static("./static"));
+let server = http.createServer(app);
 
-// 3 lettura dei parametri POST
-app.use("/", express.json({ limit: "50mb" }));
-app.use("/", express.urlencoded({ limit: "50mb", extended: true }));
 
-// 4 log dei parametri get e post
-app.use("/", (req: any, res: any, next: any) => {
-  // parametri get .query, post .body
-  if (Object.keys(req.query).length != 0) {
-    console.log("---> Parametri GET: " + JSON.stringify(req.query));
-  }
-  if (Object.keys(req.body).length != 0) {
-    console.log("---> Parametri BODY: " + JSON.stringify(req.body));
-  }
-  next();
-});
 
-//6 Autorizazioni cors
-app.use(cors(corsOptions));
+server.listen(PORT, () => {
+    init();
+    console.log("Server in ascolto sulla porta " + PORT);
+})
 
-// Apertura della connessione
-app.use("/api/", (req: any, res: any, next: any) => {
-  let connection = new MongoClient(connectionString);
-  connection
-    .connect()
-    .catch((err: any) => {
-      res.status(503);
-      res.send("Errore di connessione al DB");
+function init() {
+    fs.readFile("./static/error.html", (err: any, data: any) => {
+        if (err)
+            paginaErrore = "<h3><b>Risorsa non trovata</b></h3>";
+        else
+            paginaErrore = data.toString();
     })
-    .then((client: any) => {
-      req["connessione"] = client;
-      next();
-    });
-});
+}
 
-/***********USER LISTENER****************/
-app.get("/api/getCollections", (req: any, res: any, next: any) => {
-  let db = req["connessione"].db(DBNAME);
-  // Leggo tutte le collezioni del DB
-  db.listCollections().toArray((err: any, data: any) => {
-    if (err) {
-      res.status(500);
-      res.send("Errore lettura connesioni");
-    } else {
-      res.send(data);
-    }
-    req["connessione"].close();
-  });
-});
 
-app.get(
-  "/api/richiestaParams/:gender/:hair",
-  (req: any, res: any, next: any) => {
-    let gender = req.params.gender;
-    let hair = req.params.hair;
-
-    let collection = req["connessione"].db(DBNAME).collection("unicorns");
-    collection.find({ gender, hair }).toArray((err: any, data: any) => {
-      if (err) {
-        res.status(500);
-        res.send("Errore esecuzione query");
-      } else {
-        res.send(data);
-      }
-      req["connessione"].close();
-    });
-  }
-);
-
-app.get("/api/:collection", (req: any, res: any, next: any) => {
-  let collectionSelected = req.params.collection;
-  let param = req.query;
-
-  let collection = req["connessione"].db(DBNAME).collection(collectionSelected);
-  collection.find(param).toArray((err: any, data: any) => {
-    if (err) {
-      res.status(500);
-      res.send("Errore esecuzione query");
-    } else {
-      let response = [];
-      for (const item of data) {
-        let key = Object.keys(item)[1];
-        response.push({ _id: item["_id"], val: item[key] });
-      }
-      res.send(response);
-    }
-    req["connessione"].close();
-  });
-});
-
-app.get("/api/:collection/:id", (req: any, res: any, next: any) => {
-  let collectionSelected = req.params.collection;
-  let id = new ObjectId(req.params.id);
-
-  let collection = req["connessione"].db(DBNAME).collection(collectionSelected);
-  collection.findOne({ _id: id }, (err: any, data: any) => {
-    if (err) {
-      res.status(500);
-      res.send("Errore esecuzione query");
-    } else {
-      res.send(data);
-    }
-    req["connessione"].close();
-  });
-});
-
-app.delete("/api/:collection/:id", (req: any, res: any, next: any) => {
-  let collectionSelected = req.params.collection;
-  let id = new ObjectId(req.params.id);
-
-  let collection = req["connessione"].db(DBNAME).collection(collectionSelected);
-  collection.deleteOne({ _id: id }, (err: any, data: any) => {
-    if (err) {
-      res.status(500);
-      res.send("Errore esecuzione query");
-    } else {
-      res.send(data);
-    }
-    req["connessione"].close();
-  });
-});
-
-app.patch("/api/:collection/:id", (req: any, res: any, next: any) => {
-  let collectionSelected = req.params.collection;
-  let id = new ObjectId(req.params.id);
-
-  let collection = req["connessione"].db(DBNAME).collection(collectionSelected);
-  collection.updateOne(
-    { _id: id },
-    { $set: req.body.stream },
-    (err: any, data: any) => {
-      if (err) {
-        res.status(500);
-        res.send("Errore esecuzione query");
-      } else {
-        res.send(data);
-      }
-      req["connessione"].close();
-    }
-  );
-});
-
-app.put("/api/:collection/:id", (req: any, res: any, next: any) => {
-  let collectionSelected = req.params.collection;
-  let id = new ObjectId(req.params.id);
-
-  let collection = req["connessione"].db(DBNAME).collection(collectionSelected);
-  collection.replaceOne({ _id: id }, req.body.stream, (err: any, data: any) => {
-    if (err) {
-      res.status(500);
-      res.send("Errore esecuzione query");
-    } else {
-      res.send(data);
-    }
-    req["connessione"].close();
-  });
-});
-
-app.post("/api/:collection", (req: any, res: any, next: any) => {
-  let collectionSelected = req.params.collection;
-  let params = req.body.stream;
-
-  let collection = req["connessione"].db(DBNAME).collection(collectionSelected);
-  collection.insertOne(params, (err: any, data: any) => {
-    if (err) {
-      res.status(500);
-      res.send("Errore esecuzione query");
-    } else {
-      res.send(data);
-    }
-    req["connessione"].close();
-  });
-});
-
-/***********DEFAULT ROUTE****************/
-
+/************MIDDLEWARE************/
+//1 request log
 app.use("/", (req: any, res: any, next: any) => {
-  res.status(404);
-  if (req.originalUrl.startsWith("/api/")) {
-    res.send("API non disponibile");
-    req["connessione"].close();
-  } else {
-    res.send(paginaErrore);
-  }
-});
+    console.log("---> " + req.method + ": " + req.originalUrl);
+    next();
+})
 
-app.use("/", (err: any, req: any, res: any, next: any) => {
-  if (req["connessione"]) {
-    req["connessione"].close();
-  }
-  console.log("SERVER ERROR " + err.stack);
-  res.status(500);
-  res.send(err.message);
-});
+
+//2 
+app.use("/", express.static("./static"))//cerca le risorse nella cartella static
+
+//3 
+app.use("/", express.json({ "limit": "50mb" }))//permette la lettura dei parametri post
+
+app.use("/", express.urlencoded({ limit: "50mb", extended: true }))
+
+//4 log parametri get e post
+app.use("/", (req: any, res: any, next: any) => {
+    if (Object.keys(req.query).length != 0)//req.query contiene parametri GET
+    {
+        console.log("---> Parametri GET: " + JSON.stringify(req.query))
+    }
+    if (Object.keys(req.body).length != 0)
+        console.log("---> PARAMETRI BODY: " + JSON.stringify(req.body))
+    console.log("---> " + req.method + ": " + req.originalUrl);
+    next();
+})
+
+
+//5 apertura della connessione
+
+app.use("/api/", (req: any, res: any, next: any) => {
+    let connessione = new MongoClient(connectionString)
+    connessione.connect()
+        .catch((err: any) => {
+            res.status(503);
+            res.send("Errore connessione database")
+        })
+        .then((client: any) => {
+            req["connessione"] = client;
+            next();
+        })
+
+})
+
+app.use("/", cors(corsOption))
+
+
+/************USER LISTENER************/
+app.get("/api/getCollections", (req: any, res: any, next: any) => {
+
+    let collection = req.connessione.db(DB_NAME);
+    collection.listCollections().toArray((err: any, data: any) => {
+        if (err) {
+            res.status(500)
+            res.send("Errore esecuzione query")
+        }
+        else
+            res.send(data)
+    })
+
+
+})
+
+app.get("/api/:Collection", (req: any, res: any, next: any) => {
+    let collezione = req.params.Collection;
+    let param = req.query;
+    let collection = req.connessione.db(DB_NAME).collection(collezione)
+    collection.find(param).toArray((err: any, data: any) => {
+        if (err) {
+            res.status(500);
+            res.send("Errore esecuzione query")
+        }
+        else {
+            let response = [];
+            for (const item of data) {
+                let key = Object.keys(item)[1]
+                response.push({ "_id": item["_id"], "val": item[key] })
+            }
+
+            res.send(response);
+        }
+        req.connessione.close();
+    })
+})
+
+
+
+app.get("/api/:nomeCollezione/:id", (req: any, res: any) => {
+    let nome_collezione = req.params.nomeCollezione;
+    let id = req.params.id;
+    let collection = req.connessione.db(DB_NAME).collection(nome_collezione)
+    collection.findOne({ "_id": new ObjectId(id) }, (err: any, data: any) => {
+        if (err) {
+            res.status(500);
+            res.send("Errore esecuzione query")
+        }
+        else
+            res.send(data);
+    })
+})
+
+app.post("/api/:nome_collezione/:id", (req: any, res: any) => {
+    let nome_collezione = req.params.nome_collezione;
+    let params = req.body.stream;
+    let collection = req.connessione.db(DB_NAME).collection(nome_collezione)
+    collection.insertOne(params, (err: any, data: any) => {
+        if (err) {
+            res.status(500);
+            res.send("Errore esecuzione query");
+        }
+        else {
+            res.send(data);
+        }
+    })
+})
+app.patch("/api/:nome_collezione/:id", (req: any, res: any) => {
+    let nome_collezione = req.params.nome_collezione;
+    let id = req.params.id
+    let collection = req.connessione.db(DB_NAME).collection(nome_collezione)
+    collection.updateOne({ "_id": new ObjectId(id) }, { $set: req.body.stream }, (err: any, data: any) => {
+        if (err) {
+            res.status(500);
+            res.send("Errore esecuzione query");
+        }
+        else {
+            res.send(data);
+        }
+    })
+})
+app.put("/api/:nome_collezione/:id", (req: any, res: any) => {
+    let nome_collezione = req.params.nome_collezione;
+    let id = req.params.id
+    let collection = req.connessione.db(DB_NAME).collection(nome_collezione)
+    collection.replaceOne({ "_id": new ObjectId(id) }, req.body.stream, (err: any, data: any) => {
+        if (err) {
+            res.status(500);
+            res.send("Errore esecuzione query");
+        }
+        else {
+            res.send(data);
+        }
+    })
+})
+
+app.delete("/api/:nome_collezione/:id", (req: any, res: any) => {
+    let nomeCollection = req.params.nome_collezione;
+    let id = new ObjectId(req.params.id)
+    let collection = req.connessione.db(DB_NAME).collection(nomeCollection)
+    collection.deleteOne({ "_id": id }, (err: any, data: any) => {
+        if (err) {
+            res.status(500);
+            res.send("Errore esecuzione query");
+        }
+        else {
+            res.send(data);
+        }
+    })
+})
+
+/************DEFAULT ROOT************/
+
+
+app.use("/", (req: any, res: any) => {//viene fatta se non vien trovata la risorsa, sia statica che dinamica
+    res.status(404);
+    if (req.originalUrl.startsWith("/api/")) {
+        res.send("API non disponibile")
+        req.client.close()
+
+    }
+    else
+        res.send(paginaErrore);
+})
+
+app.use("/", (err: any, req: any, res: any, next: any) => {//viene fatta se non vien trovata la risorsa, sia statica che dinamica
+    if (req.client)
+        req.client.close();
+    console.log("ERRORE SERVER: " + err.stack);
+    res.status(500)
+    res.send(err.message)
+})
+
+
+
