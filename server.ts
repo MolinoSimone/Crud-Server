@@ -14,7 +14,7 @@ import cors from "cors";
 dotenv.config({ "path": ".env" })
 const PORT = process.env.PORT || 1337;
 const app = express();
-const DB_NAME: string = "5b";
+const DB_NAME: string = "5B";
 const connectionString: any = process.env.connectionString;
 const corsOption = {
     "origin" : function(origin : any, callback:any){
